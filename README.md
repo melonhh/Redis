@@ -237,3 +237,176 @@
     * 如果计算累计登录天数，则将每天的bitmap取AND操作
 3. 内存使用情况：
     * 一千万用户也就1M多一点
+
+> 设置键的存活时间  
+1. 命令
+    * expire key #s （常用） 设置
+    * ttl key (s) 查看剩余存活时间
+    * persist key 移除
+
+> 使用sort命令  
+> (前面所学的知识无法对集合排序)  
+1. sort排序完整格式：  
+    sort key [by pattern] [limit start count] [get pattern] [asc|desc] [alpha] [store dstkey]
+2. 一般sort用法：  
+    sort key [asc|desc]  (直接输出排序结果，只能比较数值，不改变原有list)
+3. 使用alpha，对字符串进行排序
+4. 使用limit限制返回结果
+5. 使用外部key进行排序  
+    BY选项：
+        * 默认情况下sort uid直接按uid中的值排序
+        * 通过BY选项，可以让uid按其他键的元素来排序  
+            sort uid by user_level_*  ---- *这个占位符，取uid中的值  
+    GET选项：
+        * 可以根据排序的结果取出响应的键值  
+            sort uid get user_level_* get # get user_name_*  
+            (可以使用多个get，使用排序后的uid去获取其他键值，#代表自己)  
+    组合使用BY和GET  
+        * 不排序，但使用get功能，by + 不存在的键
+6. 使用哈希表作为get和by的参数  
+    例：  
+    hmset user_info_1 name admin level 9999  
+    hmset user_inf0_2 name jack level 9999  
+    sort uid by user_info_*->level get user_info_*->name  
+7. 保存结果store（保存的结果是什么类型呢？）  
+    list类型
+
+> 在Redis中使用管道  
+
+redis是一种基于客户端-服务端模型以及请求/响应协议的tcp服务，着意味着必须经历一下过程：
+1. 客户端向服务端发送一个查询请求，并监听Socket返回
+2. 服务器接收客户端的请求命令，放入执行队列等待执行（Redis是单线程执行模式）
+3. 执行命令，获取查询结果
+4. 将结果返回客户端  
+问题：  
+    消耗时间：2，3取决于服务器，1，4取决于网络时延  
+    如果将多条集中传给Redis服务器，这样就节省了很多网络时间  
+    
+做一个实验：
+``` 
+    # cat pipeline.txt  
+    set mykey1  myvalue1  
+    set mykey2  myvalue2  
+    set mykey3  myvalue3  
+    set mykey4  myvalue4  
+    通过redis-cli --pipi选项发送管道命令  
+    # cat pipeline.txt | /usr/local/redis/bin/redis-cli --pipe  
+    All data transferred. Waiting for the last reply...  
+    Last reply received from server.  
+    errors: 0, replies: 4  
+```
+
+> Redis事务（了解）  
+> （redis事务和关系型数据库的事务不是一回事，redis只是为了能够批量执行）  
+
+1. 相关命令  
+    * multi  --- 用于标记事务块的开始，redis会将后续的命令逐个放入队列中
+    * exec  --- 执行先前放入队列的命令，然后恢复到正常连接状态
+    * discard --- 清除先前放入队列的命令，然后恢复正常连接状态
+2. 说明  
+    * redis并不存在回滚操作  
+    * 遇到错误会报错，还会继续执行之后的命令
+
+> Redis的pub/sub 发布/订阅  
+1. 简介  
+    * 发布/订阅是一个经典的消息传递模式，在这个模式中，两种用户（发布者/订阅者）
+    * 发布者：不是直接将信息发送给订阅者，而是将信息发送给频道
+    * 然后由频道将信息转发给所有对这个频道感兴趣的订阅者
+2. 实验
+    * 第一个客户端subscribe channel1 --- 监听channel1，对channel1感兴趣（阻塞）
+    * 第二个客户端subscribe channel1 channel2 --- 监听channel1，channel2
+    * 第三个客户端publish channel “nmsl” --- 向channel1发送一条消息
+    * pubsub channels 查看有哪些活跃的频道
+
+> Lua脚本语言的基础使用  
+1. 简介  
+    * Lua是一种轻量小巧的脚本语言，用C语言编写（开源）
+    * 设计目的是为了嵌入应用程序中，为应用程序提供灵活的扩展和定制功能
+2. 安装Lua
+    * http://www.lua.org/
+3. 运行方式
+    * 文件后缀.lua
+    * lua xx.lua运行
+4. 语法
+    * 数据类型（8种）：
+        * nil       ---  表示无效值，条件语句中表示false
+        * boolean   ---  布尔
+        * number    ---  双精度类型的实浮点苏
+        * string    ---  单引号或双引号
+        * userdata  ---  表示任意存储在变量中的c数据结构
+        * function  ---  表示C或lua编写的函数
+        * thread    ---  表示独立线程
+        * table     ---  表示一个关联数组，数组索引可以是数字或字符串
+    * 运算符
+        * 赋值运算符
+            * str = "hello".."world"  #通过..连接字符串
+            * a,b,e = 1,2     # a = 1 b =2 e = nil
+        * 算术运算符 
+        * 关系运算符
+            * ~=    # 不等于
+        * 逻辑运算符
+            * and or not
+        * 其他
+            * 返回字符串长度 #"lua"
+    * 流程控制
+        * if then else end
+        * while（） do end
+        * for a = 1,10,1 do end
+        * repeat until()
+    * 数组
+        * arr = {1,2,3,4}
+        * (#arr)返回数组长度
+        * for i,v in ipairs(arr) do end
+    * 函数
+        * function calc(a,b,c)  return end
+    * table
+        * 类似Java中的map，JavaScript中的Json对象
+        * person = {} person.name="jack" person.age=20
+        * 取：person.name person["name"]
+    * 模块和包
+        * require "module" module是文件名
+5. 如何在Redis里面玩Lua
+    * eval "return redis.call('set', KEYS[1], ARGV[1])" 1 k1 v1  
+        (简单的命令，但是这种方式并不适用)
+    * 编辑一个Lua脚本，用于修改json格式数据的值  
+     ```
+          local id = KEYS[1]
+          local data = ARGV[1]
+          local dataSource = cjson.decode(data)  -- 把json格式的lua中的table对象
+          
+          local retjson = redis.call('get',id)  -- 调用redis的get命令
+          
+          if rejson==false then
+                  rejson={}
+          else
+                  retjson=cjson.decode(retjson)
+          end
+          
+          for k,v in pairs(dataSource) do
+                  rejson[k] = v
+          end
+          redis.call('set',id,cjson.encode(retjson))
+          return redis.call('get',id)
+     ```
+    * 执行上面的Lua脚本文件
+        * /usr/local/redis/bin/redis-cli --eval ./updatejson.lua userKey , '{"username":"xiaobai" , "age":"18"}'
+        * 逗号前后有空格
+    * Lua调试模式
+        * 在配置文件中配置 loglevel debug ； logfile "/usr/local/redis/log/redis.log"
+        * 在Lua脚本中添加debug信息
+            * redis.debug(id)
+            * redis.log(redis.LOG_WARNING, cjson.encode(retjson))  -- 将信息写入日志文件
+        * 使用 --ldb 选项开启Lua调试
+            * /usr/local/redis/bin/redis-cli --ldb --eval ./updatejson.lua userKey , '{"username":"xiaobai" , "age":"18"}'
+            * 键入s，单步执行
+            * 键入w，浏览所有脚本
+            * 键入b + 行号，设置一个断点
+            * 键入c，直接运行到断点处停下
+
+### Java使用Redis
+> Jedis --- Redis官方推荐Java连接开发工具
+1. Java单实例连接 --- JedisTest.java
+    * 连接阿里云主机，首先得将6379端口加入到安全组
+2. Jedis连接池连接 --- JedisPoolTest.java
+3. 编写工具类 --- JedisPoolUtil.java
+    
